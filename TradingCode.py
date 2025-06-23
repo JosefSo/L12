@@ -4,11 +4,12 @@ Simple ML project for learning trading strategies based on technical indicators.
 Author: ChatGPT o3
 Date: 2025‑06‑23
 Dependencies:
-    pip install yfinance pandas pandas_ta scikit-learn matplotlib xgboost
+    pip install yfinance pandas scikit-learn matplotlib xgboost
+    # Optional: pandas_ta (older versions) if you prefer using the library
 
 This script:
 1. Downloads historical OHLCV data using yfinance.
-2. Computes RSI, SMA, MACD indicators with pandas_ta.
+2. Computes RSI, SMA, MACD indicators with built-in helper functions.
 3. Generates BUY / SELL / HOLD labels from a straightforward rule‑based strategy.
 4. Trains a RandomForestClassifier (or XGBoost) to imitate the strategy (behavior cloning).
 5. Evaluates the model on unseen data and compares returns with the original strategy using a vectorized back‑tester.
@@ -26,7 +27,9 @@ warnings.filterwarnings("ignore")
 # ========= 1. Imports ========= #
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+# pandas_ta is optional and currently incompatible with numpy>=2.
+# We implement the few indicators we need locally to avoid this dependency.
+# Core ML dependencies
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
@@ -45,16 +48,47 @@ def fetch_data(ticker: str = "AAPL", period: str = "5y", interval: str = "1d") -
     return df
 
 
+def sma(series: pd.Series, length: int) -> pd.Series:
+    """Simple moving average."""
+    return series.rolling(window=length, min_periods=length).mean()
+
+
+def ema(series: pd.Series, length: int) -> pd.Series:
+    """Exponential moving average."""
+    return series.ewm(span=length, adjust=False).mean()
+
+
+def rsi(series: pd.Series, length: int = 14) -> pd.Series:
+    """Relative Strength Index."""
+    delta = series.diff()
+    up = delta.clip(lower=0)
+    down = -delta.clip(upper=0)
+    roll_up = up.ewm(span=length, adjust=False).mean()
+    roll_down = down.ewm(span=length, adjust=False).mean()
+    rs = roll_up / roll_down
+    return 100 - (100 / (1 + rs))
+
+
+def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
+    """Moving Average Convergence Divergence."""
+    ema_fast = ema(series, fast)
+    ema_slow = ema(series, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = ema(macd_line, signal)
+    hist = macd_line - signal_line
+    return pd.DataFrame({"MACD": macd_line, "MACD_signal": signal_line, "MACD_hist": hist})
+
+
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Add RSI(14), SMA(50), SMA(200), MACD and their signal/ histogram to the DataFrame."""
+    """Add RSI(14), SMA(50), SMA(200) and MACD columns to the DataFrame."""
     df = df.copy()
 
-    df["RSI"] = ta.rsi(df["Close"], length=14)
-    df["SMA50"] = ta.sma(df["Close"], length=50)
-    df["SMA200"] = ta.sma(df["Close"], length=200)
+    df["RSI"] = rsi(df["Close"], length=14)
+    df["SMA50"] = sma(df["Close"], length=50)
+    df["SMA200"] = sma(df["Close"], length=200)
 
-    macd = ta.macd(df["Close"], fast=12, slow=26, signal=9)
-    df[["MACD", "MACD_signal", "MACD_hist"]] = macd
+    macd_df = macd(df["Close"], fast=12, slow=26, signal=9)
+    df[["MACD", "MACD_signal", "MACD_hist"]] = macd_df
 
     return df.dropna()
 
