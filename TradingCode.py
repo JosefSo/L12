@@ -76,7 +76,14 @@ def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> 
     macd_line = ema_fast - ema_slow
     signal_line = ema(macd_line, signal)
     hist = macd_line - signal_line
-    return pd.DataFrame({"MACD": macd_line, "MACD_signal": signal_line, "MACD_hist": hist})
+    # Explicitly pass the original series index to avoid issues when pandas
+    # interprets the values as scalars. This ensures the MACD components are
+    # properly aligned with the input data across different pandas versions.
+    return pd.DataFrame({
+        "MACD": macd_line,
+        "MACD_signal": signal_line,
+        "MACD_hist": hist
+    }, index=series.index)
 
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
